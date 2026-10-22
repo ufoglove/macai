@@ -69,8 +69,10 @@ ASSET_TICKERS = {
     "SOL": {"BSOL", "GSOL", "VSOL", "FSOL", "SOEZ", "TSOL", "SOLC"},
 }
 COINGLASS_ENDPOINTS = {"BTC": "/api/etf/bitcoin/flow-history", "ETH": "/api/etf/ethereum/flow-history"}
-# 2024-01～02 的頁面寫「11/01/2024」（英式日／月）、整數百萬、負數用減號、未公布留白；之後改「11 Jan 2024」、括號負數、「-」
+# 2024-01～02 上旬的頁面寫「11/01/2024」（英式日／月）、整數百萬、負數用減號、未公布留白；2024-02 下旬寫「12 Feb」（沒有年份，
+# 另有「11 Jan to 09 Feb」彙總列）；之後改「11 Jan 2024」、括號負數、「-」。
 DATE_FORMATS = ("%d %b %Y", "%d/%m/%Y", "%d %B %Y")
+NO_YEAR_FORMATS = ("%d %b", "%d %B")
 TICKER_RE = re.compile(r"^[A-Z][A-Z0-9]{1,5}$")
 REVISION_TOLERANCE_USD = 50_000.0   # Farside 以 0.1 百萬美元四捨五入
 MAX_PENDING_RUN = 3                 # 表尾連續「-」超過 3 個交易日視為停止申報（下市／轉換），不再算未公布
@@ -120,13 +122,28 @@ def number(value: Any) -> float | None:
     return parsed if math.isfinite(parsed) else None
 
 
-def parse_day(text: str):
+def parse_day(text: str, ref=None):
+    """日期儲存格 → date。沒寫年份的取 ref（存檔日）的年份；落在 ref 之後超過一天就是前一年（跨年的近期視窗）。"""
     t = " ".join(str(text).split())
     for fmt in DATE_FORMATS:
         try:
             return datetime.strptime(t, fmt).date()
         except ValueError:
             continue
+    if ref is None:
+        return None
+    for fmt in NO_YEAR_FORMATS:
+        try:
+            parsed = datetime.strptime(f"{t} 2000", f"{fmt} %Y")   # 先帶閏年，2/29 才解析得了
+        except ValueError:
+            continue
+        for year in (ref.year, ref.year - 1):
+            try:
+                day = parsed.replace(year=year).date()
+            except ValueError:
+                continue
+            if day <= ref + timedelta(days=1):
+                return day
     return None
 
 
@@ -158,10 +175,11 @@ def mark_pending(rows: list[dict], values: list[dict]) -> None:
         row["pending"].sort()
 
 
-def parse_farside(html: str) -> list[dict]:
+def parse_farside(html: str, ref=None) -> list[dict]:
     """Farside 資金流表 → [{asset, tickers, rows: [{day, total_usd, funds_usd, pending}]}]（日期由舊到新）。
 
     Total／Average／Maximum／Minimum 等非日期列略過；整列基金都是「-」（休市）不記；pending 規則見 mark_pending。
+    ref：存檔日（date），給沒寫年份的日期用；沒有 ref 時這種列略過。
     """
     from bs4 import BeautifulSoup
 
@@ -188,7 +206,7 @@ def parse_farside(html: str) -> list[dict]:
                      if j > 0 and j != total_col and TICKER_RE.match(c.strip())}
         parsed, values_by_row = [], []
         for cells in rows[header_i + 1:]:
-            day = parse_day(cells[0]) if cells else None
+            day = parse_day(cells[0], ref) if cells else None
             if day is None or len(cells) < len(header):
                 continue
             values = {tk: parse_number(cells[j]) for j, tk in fund_cols.items()}
@@ -419,7 +437,7 @@ def process_wayback(store: Store, progress: dict, wb: Wayback, *, pages: dict | 
         info = progress["pages"][page]
         digest = cap.get("digest")
         earliest = progress["digests"].get(digest) if digest else None
-        if earliest and earliest <= ts:
+        if earliest and earliest < ts:
             info["skipped"][ts] = "same_digest"
             stats["same_digest"] += 1
             continue
@@ -453,8 +471,8 @@ def process_wayback(store: Store, progress: dict, wb: Wayback, *, pages: dict | 
                 tmp = dest.with_suffix(".tmp")
                 tmp.write_bytes(gzip.compress(html.encode("utf-8")))
                 tmp.replace(dest)
-        tables = parse_farside(html)
         known = wayback_time(actual)
+        tables = parse_farside(html, known.date())
         if not tables:
             info["skipped"][ts] = "no_etf_table"
             stats["no_table"] += 1

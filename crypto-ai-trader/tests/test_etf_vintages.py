@@ -40,6 +40,15 @@ JAN_2024_LAYOUT = """
 </table>
 """
 
+# 2024-02 下旬版：日期沒有年份、有「11 Jan to 09 Feb」彙總列
+FEB_2024_LAYOUT = """
+<table class="etf"><tr><td>Date</td><td>IBIT</td><td>FBTC</td><td>GBTC</td><td>Total</td></tr>
+<tr><td>11 Jan to 09 Feb</td><td>3,751.5</td><td>3,003.5</td><td>(6,382.8)</td><td>2,651.0</td></tr>
+<tr><td>29 Dec</td><td>1.0</td><td>2.0</td><td>(1.0)</td><td>2.0</td></tr>
+<tr><td>26 Feb</td><td>111.8</td><td>243.3</td><td>(22.4)</td><td>519.9</td></tr>
+</table>
+"""
+
 ETH_LAYOUT = """
 <table class="etf"><tr><td></td><td>ETHA</td><td>FETH</td><td>ETHE</td><td></td></tr>
 <tr><td>23 Jul 2024</td><td>266.5</td><td>71.3</td><td>(484.1)</td><td>(146.3)</td></tr></table>
@@ -72,6 +81,14 @@ def test_parse_january_2024_layout():
     assert [r["day"] for r in rows] == ["2024-01-11", "2024-01-29"]
     assert rows[0]["total_usd"] == 655e6 and rows[0]["funds_usd"]["GBTC"] == -95e6 and rows[0]["pending"] == []
     assert rows[1]["pending"] == ["IBIT"] and rows[1]["total_usd"] == 56e6
+
+
+def test_parse_dates_without_year_use_capture_date():
+    import datetime as dt
+    [table] = ev.parse_farside(FEB_2024_LAYOUT, dt.date(2024, 2, 27))
+    assert [r["day"] for r in table["rows"]] == ["2023-12-29", "2024-02-26"]   # 落在存檔日之後 → 前一年
+    assert ev.parse_farside(FEB_2024_LAYOUT) == []                             # 沒有存檔日就不猜年份
+    assert ev.parse_day("29 Feb", dt.date(2024, 3, 1)) == dt.date(2024, 2, 29)
 
 
 def test_challenge_page_and_unknown_tables_yield_nothing():
