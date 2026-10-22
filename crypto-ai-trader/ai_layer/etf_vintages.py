@@ -69,7 +69,8 @@ ASSET_TICKERS = {
     "SOL": {"BSOL", "GSOL", "VSOL", "FSOL", "SOEZ", "TSOL", "SOLC"},
 }
 COINGLASS_ENDPOINTS = {"BTC": "/api/etf/bitcoin/flow-history", "ETH": "/api/etf/ethereum/flow-history"}
-DATE_RE = re.compile(r"^\d{1,2} [A-Za-z]{3} \d{4}$")
+# 2024-01～02 的頁面寫「11/01/2024」（英式日／月）、整數百萬、負數用減號、未公布留白；之後改「11 Jan 2024」、括號負數、「-」
+DATE_FORMATS = ("%d %b %Y", "%d/%m/%Y", "%d %B %Y")
 TICKER_RE = re.compile(r"^[A-Z][A-Z0-9]{1,5}$")
 REVISION_TOLERANCE_USD = 50_000.0   # Farside 以 0.1 百萬美元四捨五入
 MAX_PENDING_RUN = 3                 # 表尾連續「-」超過 3 個交易日視為停止申報（下市／轉換），不再算未公布
@@ -117,6 +118,16 @@ def number(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return parsed if math.isfinite(parsed) else None
+
+
+def parse_day(text: str):
+    t = " ".join(str(text).split())
+    for fmt in DATE_FORMATS:
+        try:
+            return datetime.strptime(t, fmt).date()
+        except ValueError:
+            continue
+    return None
 
 
 def detect_asset(cells: Iterable[str]) -> str | None:
@@ -177,11 +188,8 @@ def parse_farside(html: str) -> list[dict]:
                      if j > 0 and j != total_col and TICKER_RE.match(c.strip())}
         parsed, values_by_row = [], []
         for cells in rows[header_i + 1:]:
-            if not cells or not DATE_RE.match(cells[0].strip()) or len(cells) < len(header):
-                continue
-            try:
-                day = datetime.strptime(cells[0].strip(), "%d %b %Y").date()
-            except ValueError:
+            day = parse_day(cells[0]) if cells else None
+            if day is None or len(cells) < len(header):
                 continue
             values = {tk: parse_number(cells[j]) for j, tk in fund_cols.items()}
             if all(v is None for v in values.values()):
@@ -376,14 +384,19 @@ def _slug(page: str) -> str:
 
 def process_wayback(store: Store, progress: dict, wb: Wayback, *, pages: dict | None = None, max_fetch: int = 30,
                     since_days: int | None = None, now: datetime | None = None, raw_dir: Path | None = RAW_DIR,
-                    on_checkpoint: Callable[[], None] = lambda: None, log: Callable[[str], None] = print) -> dict:
-    """處理還沒看過的存檔（由舊到新）。同內容（digest）且更早的存檔已處理過就略過，不重抓。"""
+                    retry_no_table: bool = False, on_checkpoint: Callable[[], None] = lambda: None, log: Callable[[str], None] = print) -> dict:
+    """處理還沒看過的存檔（由舊到新）。同內容（digest）且更早的存檔已處理過就略過；原始檔已在 raw_dir 就不重抓。
+
+    retry_no_table：把先前「沒有 ETF 表」的存檔放回待處理（解析器支援新版面後重跑，讀本機原始檔、不重抓）。
+    """
     pages = PAGES if pages is None else pages
     now = now or utc_now()
     since = (now - timedelta(days=since_days)).strftime("%Y%m%d") if since_days else None
     todo, errors = [], {}
     for page, match in pages.items():
         info = progress["pages"].setdefault(page, {"done": [], "skipped": {}})
+        if retry_no_table:
+            info["skipped"] = {ts: why for ts, why in info["skipped"].items() if why != "no_etf_table"}
         try:
             caps = wb.captures(page, match, since)
         except WaybackError as e:
@@ -398,7 +411,7 @@ def process_wayback(store: Store, progress: dict, wb: Wayback, *, pages: dict | 
         if not since:
             info["captures_listed"] = len(caps)
     todo.sort(key=lambda x: (x[0], x[1]))
-    stats = {"todo": len(todo), "fetched": 0, "same_digest": 0, "no_table": 0, "failed": 0, "events": 0}
+    stats = {"todo": len(todo), "fetched": 0, "from_raw": 0, "same_digest": 0, "no_table": 0, "failed": 0, "events": 0}
     failures_in_row = 0
     for ts, page, cap in todo:
         if stats["fetched"] >= max_fetch:
@@ -410,21 +423,28 @@ def process_wayback(store: Store, progress: dict, wb: Wayback, *, pages: dict | 
             info["skipped"][ts] = "same_digest"
             stats["same_digest"] += 1
             continue
-        try:
-            actual, final_url, body = wb.fetch(ts, cap["original"])
-        except WaybackError as e:
-            stats["failed"] += 1
-            failures_in_row += 1
-            tries = info.setdefault("failures", {})
-            tries[ts] = tries.get(ts, 0) + 1
-            if tries[ts] >= 3:
-                info["skipped"][ts] = f"fetch_failed: {e}"
-            if failures_in_row >= 3:
-                errors["fetch"] = f"連續 {failures_in_row} 次失敗（{e}），本輪停止"
-                break
-            continue
-        failures_in_row = 0
-        stats["fetched"] += 1
+        cached = Path(raw_dir) / _slug(page) / f"{ts}.html.gz" if raw_dir is not None else None
+        if cached is not None and cached.exists():
+            actual, final_url, body = ts, f"{WAYBACK_URL}/{ts}id_/{cap['original']}", cached.read_bytes()
+            fetched_at = _iso(datetime.fromtimestamp(cached.stat().st_mtime, timezone.utc))   # 當初抓下來的時刻
+            stats["from_raw"] += 1
+        else:
+            try:
+                actual, final_url, body = wb.fetch(ts, cap["original"])
+            except WaybackError as e:
+                stats["failed"] += 1
+                failures_in_row += 1
+                tries = info.setdefault("failures", {})
+                tries[ts] = tries.get(ts, 0) + 1
+                if tries[ts] >= 3:
+                    info["skipped"][ts] = f"fetch_failed: {e}"
+                if failures_in_row >= 3:
+                    errors["fetch"] = f"連續 {failures_in_row} 次失敗（{e}），本輪停止"
+                    break
+                continue
+            failures_in_row = 0
+            stats["fetched"] += 1
+            fetched_at = _iso(utc_now())
         html = _decode(body)
         if raw_dir is not None:
             dest = Path(raw_dir) / _slug(page) / f"{actual}.html.gz"
@@ -439,7 +459,6 @@ def process_wayback(store: Store, progress: dict, wb: Wayback, *, pages: dict | 
             info["skipped"][ts] = "no_etf_table"
             stats["no_table"] += 1
         else:
-            fetched_at = _iso(utc_now())
             for table in tables:
                 for row in table["rows"]:
                     if row["day"] > (known + timedelta(days=1)).date().isoformat():
@@ -449,9 +468,9 @@ def process_wayback(store: Store, progress: dict, wb: Wayback, *, pages: dict | 
                                        evidence=final_url)):
                         stats["events"] += 1
             info["done"].append(ts)
-        if digest and (earliest is None or ts < earliest):
-            progress["digests"][digest] = ts
-        if stats["fetched"] % 10 == 0:
+            if digest and (earliest is None or ts < earliest):   # 只記有表的內容；沒表的可用 retry_no_table 重跑
+                progress["digests"][digest] = ts
+        if (stats["fetched"] + stats["from_raw"]) % 10 == 0:
             on_checkpoint()
             log(f"[etf_vintages] wayback 已處理 {stats['fetched']} 筆存檔，新增 {stats['events']} 筆紀錄")
     stats["remaining"] = sum(1 for ts, page, _ in todo
@@ -689,7 +708,8 @@ def write_daily_tables(events: list[dict]) -> dict:
 
 # ---------------------------------------------------------------- CLI
 
-def run(mode: str, *, max_fetch: int, since_days: int | None, coinglass: bool, log=print) -> int:
+def run(mode: str, *, max_fetch: int, since_days: int | None, coinglass: bool, retry_no_table: bool = False,
+        log=print) -> int:
     started = utc_now()
     with store_lock(blocking=(mode == "backfill")) as got:
         if not got:
@@ -705,7 +725,7 @@ def run(mode: str, *, max_fetch: int, since_days: int | None, coinglass: bool, l
         errors = {}
         try:
             summary["wayback"] = process_wayback(store, progress, Wayback(), max_fetch=max_fetch, since_days=since_days,
-                                                 on_checkpoint=checkpoint, log=log)
+                                                 retry_no_table=retry_no_table, on_checkpoint=checkpoint, log=log)
             if summary["wayback"].get("errors"):
                 errors["wayback"] = summary["wayback"]["errors"]
         except Exception as e:  # 一個來源壞掉不影響其他來源
@@ -748,6 +768,7 @@ def main(argv=None) -> int:
     c.add_argument("--no-coinglass", action="store_true")
     b = sub.add_parser("backfill", help="Wayback 全歷史回補（由舊到新，可續跑）")
     b.add_argument("--max", type=int, default=300)
+    b.add_argument("--retry-no-table", action="store_true", help="先前沒解析出表的存檔重跑（讀本機原始檔）")
     sub.add_parser("status")
     r = sub.add_parser("report")
     r.add_argument("--out", help="寫到檔案（預設印出）")
@@ -760,7 +781,7 @@ def main(argv=None) -> int:
     if args.command == "collect":
         return run("collect", max_fetch=args.max, since_days=45, coinglass=not args.no_coinglass)
     if args.command == "backfill":
-        return run("backfill", max_fetch=args.max, since_days=None, coinglass=False)
+        return run("backfill", max_fetch=args.max, since_days=None, coinglass=False, retry_no_table=args.retry_no_table)
     if args.command == "status":
         print(json.dumps(status(), ensure_ascii=False, indent=2, default=str))
         return 0

@@ -31,6 +31,15 @@ OLD_LAYOUT = """
 </table>
 """
 
+# 2024-01 版：英式日／月、整數、減號負數、未公布留白、尚未到的日期整列空白
+JAN_2024_LAYOUT = """
+<table><tr><td>Date</td><td>IBIT</td><td>FBTC</td><td>GBTC</td><td>Total</td></tr>
+<tr><td>11/01/2024</td><td>112</td><td>227</td><td>-95</td><td>655</td></tr>
+<tr><td>29/01/2024</td><td></td><td>208</td><td>-192</td><td>56</td></tr>
+<tr><td>30/01/2024</td><td></td><td></td><td></td><td></td></tr>
+</table>
+"""
+
 ETH_LAYOUT = """
 <table class="etf"><tr><td></td><td>ETHA</td><td>FETH</td><td>ETHE</td><td></td></tr>
 <tr><td>23 Jul 2024</td><td>266.5</td><td>71.3</td><td>(484.1)</td><td>(146.3)</td></tr></table>
@@ -55,6 +64,14 @@ def test_parse_old_layout_and_eth():
     assert btc["asset"] == "BTC" and [r["total_usd"] for r in btc["rows"]] == [58.3e6, -92.7e6]
     [eth] = ev.parse_farside(ETH_LAYOUT)
     assert eth["asset"] == "ETH" and eth["rows"][0]["total_usd"] == -146.3e6
+
+
+def test_parse_january_2024_layout():
+    [table] = ev.parse_farside(JAN_2024_LAYOUT)
+    rows = table["rows"]
+    assert [r["day"] for r in rows] == ["2024-01-11", "2024-01-29"]
+    assert rows[0]["total_usd"] == 655e6 and rows[0]["funds_usd"]["GBTC"] == -95e6 and rows[0]["pending"] == []
+    assert rows[1]["pending"] == ["IBIT"] and rows[1]["total_usd"] == 56e6
 
 
 def test_challenge_page_and_unknown_tables_yield_nothing():
@@ -166,6 +183,10 @@ def test_process_wayback_uses_capture_time_skips_same_digest_and_resumes(tmp_pat
     wb.fetched.clear()
     again = ev.process_wayback(store, progress, wb, pages={"farside.co.uk/btc/": "exact"}, raw_dir=None)
     assert again["todo"] == 0 and wb.fetched == []
+    # 「沒有表」的存檔可重跑，讀本機原始檔、不重抓
+    retry = ev.process_wayback(store, progress, wb, pages={"farside.co.uk/?p=1508": "exact"}, raw_dir=tmp_path / "raw",
+                               retry_no_table=True)
+    assert retry["from_raw"] == 1 and retry["fetched"] == 0 and wb.fetched == [] and retry["no_table"] == 1
 
 
 def test_process_wayback_gives_up_after_three_failures(tmp_path):
