@@ -273,3 +273,12 @@ def test_report_lists_monthly_lag(tmp_path):
     text = ev.report_markdown(path)
     # 08-09（五）存檔在 08-12 09:00，晚於 D+3（08-12 00:00）；08-12 在 08-14 已完整
     assert "## farside · BTC" in text and "| 2024-08 | 2 | 2 | 45 | 58 | 50% |" in text
+
+
+def test_decode_salvages_truncated_gzip():
+    import gzip
+    html = NEW_LAYOUT * 20
+    packed = gzip.compress(html.encode())
+    assert ev._decode(packed) == html
+    salvaged = ev._decode(packed[:-12])          # 少了 gzip 尾端（CRC／長度）
+    assert salvaged.startswith(html[:1000]) and ev.parse_farside(salvaged)

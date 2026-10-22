@@ -31,6 +31,7 @@ import gzip
 import json
 import math
 from pathlib import Path
+import zlib
 import re
 import sys
 import time
@@ -222,9 +223,20 @@ def parse_farside(html: str, ref=None) -> list[dict]:
     return out
 
 
+def _gunzip(body: bytes) -> bytes:
+    """gzip 解壓；存檔偶有截斷或尾端損壞的 gzip（requests 會丟 ContentDecodingError），盡量取回能解的部分。"""
+    try:
+        return gzip.decompress(body)
+    except (OSError, EOFError, zlib.error):
+        try:
+            return zlib.decompressobj(16 + zlib.MAX_WBITS).decompress(body)
+        except zlib.error:
+            return body
+
+
 def _decode(body: bytes) -> str:
     if body[:2] == b"\x1f\x8b":
-        body = gzip.decompress(body)
+        body = _gunzip(body)
     return body.decode("utf-8", "replace")
 
 
@@ -346,7 +358,7 @@ class Wayback:
         self._sleep, self._clock, self.spacing = sleeper, clock, spacing
         self._last = None
 
-    def _get(self, url: str, params: dict | None = None, timeout: float = 90.0, attempts: int = 4):
+    def _get(self, url: str, params: dict | None = None, timeout: float = 90.0, attempts: int = 4, stream: bool = False):
         delay = 15.0
         for attempt in range(attempts):
             if self._last is not None:
@@ -355,7 +367,7 @@ class Wayback:
                     self._sleep(wait)
             self._last = self._clock()
             try:
-                r = self.session.get(url, params=params, timeout=timeout)
+                r = self.session.get(url, params=params, timeout=timeout, stream=stream)
             except requests.RequestException as e:
                 err = f"{type(e).__name__}"
             else:
@@ -391,9 +403,17 @@ class Wayback:
 
     def fetch(self, ts: str, original: str) -> tuple[str, str, bytes]:
         """回傳（實際存檔時刻 14 碼、最終網址、內容）。Wayback 若轉到最近的存檔，以實際存檔時刻為準。"""
-        r = self._get(f"{WAYBACK_URL}/{ts}id_/{original}")
+        r = self._get(f"{WAYBACK_URL}/{ts}id_/{original}", stream=True)
+        try:   # 不讓 requests 自動解壓：壞掉的 gzip 會整筆丟 ContentDecodingError，改由 _decode 盡量救回
+            body = r.raw.read(decode_content=False)
+        except requests.RequestException as e:
+            raise WaybackError(type(e).__name__) from e
+        except Exception as e:   # urllib3 讀取中斷
+            raise WaybackError(type(e).__name__) from e
+        finally:
+            r.close()
         m = re.search(r"/web/(\d{14})id_/", r.url)
-        return (m.group(1) if m else ts), r.url, r.content
+        return (m.group(1) if m else ts), r.url, body
 
 
 def _slug(page: str) -> str:
