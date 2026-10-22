@@ -151,7 +151,7 @@ def test_process_wayback_uses_capture_time_skips_same_digest_and_resumes(tmp_pat
                                              ("20261021180000", "D2", later)],
                       "farside.co.uk/?p=1508": [("20240601000000", "HK", "<p>HK ETF</p>")]})
     store, progress = ev.Store(tmp_path / ev.OBS_NAME), {"pages": {}, "digests": {}}
-    stats = ev.process_wayback(store, progress, wb, pages={"farside.co.uk/btc/": "prefix", "farside.co.uk/?p=1508": "exact"},
+    stats = ev.process_wayback(store, progress, wb, pages={"farside.co.uk/btc/": "exact", "farside.co.uk/?p=1508": "exact"},
                                raw_dir=tmp_path / "raw", max_fetch=10)
     store.flush()
     assert stats["fetched"] == 3 - 1 + 1 and stats["same_digest"] == 1 and stats["no_table"] == 1
@@ -164,7 +164,7 @@ def test_process_wayback_uses_capture_time_skips_same_digest_and_resumes(tmp_pat
     assert ev.asof("BTC", "2026-10-21T18:00:00Z", path=tmp_path / ev.OBS_NAME)[day] == 33.5e6
     # 第二輪不重抓
     wb.fetched.clear()
-    again = ev.process_wayback(store, progress, wb, pages={"farside.co.uk/btc/": "prefix"}, raw_dir=None)
+    again = ev.process_wayback(store, progress, wb, pages={"farside.co.uk/btc/": "exact"}, raw_dir=None)
     assert again["todo"] == 0 and wb.fetched == []
 
 
@@ -172,10 +172,10 @@ def test_process_wayback_gives_up_after_three_failures(tmp_path):
     wb = FakeWayback({"farside.co.uk/btc/": [("20240101000000", "X", None)]})
     store, progress = ev.Store(tmp_path / ev.OBS_NAME), {"pages": {}, "digests": {}}
     for _ in range(3):
-        stats = ev.process_wayback(store, progress, wb, pages={"farside.co.uk/btc/": "prefix"}, raw_dir=None)
+        stats = ev.process_wayback(store, progress, wb, pages={"farside.co.uk/btc/": "exact"}, raw_dir=None)
     assert stats["failed"] == 1
     assert progress["pages"]["farside.co.uk/btc/"]["skipped"]["20240101000000"].startswith("fetch_failed")
-    assert ev.process_wayback(store, progress, wb, pages={"farside.co.uk/btc/": "prefix"}, raw_dir=None)["todo"] == 0
+    assert ev.process_wayback(store, progress, wb, pages={"farside.co.uk/btc/": "exact"}, raw_dir=None)["todo"] == 0
 
 
 class FakeCoinglass:

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>com.cryptoai.etf-vintage</string>
+    <key>LimitLoadToSessionType</key><string>Background</string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>__VENV__/bin/python</string>
+      <string>-m</string>
+      <string>ai_layer.etf_vintages</string>
+      <string>collect</string>
+    </array>
+    <key>WorkingDirectory</key><string>__HOME__</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+      <key>PATH</key><string>__VENV__/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+      <key>HOME</key><string>__HOME__</string>
+      <key>CRYPTO_AI_ROOT</key><string>__ROOT__</string>
+      <key>PYTHONPATH</key><string>__ROOT__</string>
+      <key>PYTHONUNBUFFERED</key><string>1</string>
+      <key>LANG</key><string>en_US.UTF-8</string>
+    </dict>
+    <key>RunAtLoad</key><false/>
+    <key>StartCalendarInterval</key>
+    <array>
+      <dict><key>Minute</key><integer>23</integer></dict>
+    </array>
+    <key>StandardOutPath</key><string>__HOME__/Library/Logs/crypto-ai/etf-vintage.out.log</string>
+    <key>StandardErrorPath</key><string>__HOME__/Library/Logs/crypto-ai/etf-vintage.err.log</string>
+</dict>
+</plist>

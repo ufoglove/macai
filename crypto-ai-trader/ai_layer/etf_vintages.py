@@ -52,15 +52,16 @@ FETCH_SPACING_S = 2.0
 NY = ZoneInfo("America/New_York")
 
 # Farside 頁面（Wayback 網址 → CDX 比對方式）。資產看表頭代號判斷，不靠網址；香港 ETF 頁（?p=1508）沒有美國代號會被略過。
+# 只用 exact：CDX 的 prefix 查詢實測回 503（2026-10-22）；帶 ?ref= 等參數的變體存檔很少，不收。
 PAGES = {
-    "farside.co.uk/?p=997": "prefix",                      # 2024-01～08 BTC（舊網址，近期視窗）
+    "farside.co.uk/?p=997": "exact",                       # 2024-01～08 BTC（舊網址，近期視窗）
     "farside.co.uk/?p=1321": "exact",                      # 2024-03～07 BTC All Data
-    "farside.co.uk/bitcoin-etf-flow-all-data/": "prefix",  # 2024-08～ BTC 全歷史
-    "farside.co.uk/btc/": "prefix",                        # 2024-08～ BTC 近期視窗
+    "farside.co.uk/bitcoin-etf-flow-all-data/": "exact",   # 2024-08～ BTC 全歷史
+    "farside.co.uk/btc/": "exact",                         # 2024-08～ BTC 近期視窗
     "farside.co.uk/?p=1518": "exact",                      # 2024-05～ ETH（舊網址）
-    "farside.co.uk/eth/": "prefix",
-    "farside.co.uk/ethereum-etf-flow-all-data/": "prefix",
-    "farside.co.uk/sol/": "prefix",
+    "farside.co.uk/eth/": "exact",
+    "farside.co.uk/ethereum-etf-flow-all-data/": "exact",
+    "farside.co.uk/sol/": "exact",
 }
 ASSET_TICKERS = {
     "BTC": {"IBIT", "FBTC", "GBTC", "ARKB", "BITB", "HODL", "BRRR", "EZBC", "BTCO", "BTCW"},
@@ -319,9 +320,9 @@ class Wayback:
         self._sleep, self._clock, self.spacing = sleeper, clock, spacing
         self._last = None
 
-    def _get(self, url: str, params: dict | None = None, timeout: float = 90.0):
+    def _get(self, url: str, params: dict | None = None, timeout: float = 90.0, attempts: int = 4):
         delay = 15.0
-        for attempt in range(4):
+        for attempt in range(attempts):
             if self._last is not None:
                 wait = self.spacing - (self._clock() - self._last)
                 if wait > 0:
@@ -340,7 +341,7 @@ class Wayback:
                 retry = number(r.headers.get("Retry-After"))
                 if retry:
                     delay = max(delay, min(retry, 300.0))
-            if attempt < 3:
+            if attempt < attempts - 1:
                 self._sleep(delay)
                 delay *= 2
         raise WaybackError(err)
@@ -351,7 +352,7 @@ class Wayback:
         if since:
             params["from"] = since
         try:
-            rows = self._get(CDX_URL, params).json()
+            rows = self._get(CDX_URL, params, attempts=2).json()
         except ValueError:      # 沒有存檔時 CDX 回空字串
             rows = []
         out = []
@@ -387,9 +388,12 @@ def process_wayback(store: Store, progress: dict, wb: Wayback, *, pages: dict | 
             caps = wb.captures(page, match, since)
         except WaybackError as e:
             errors[page] = f"cdx: {e}"
+            log(f"[etf_vintages] CDX {page} 失敗：{e}")
             continue
         done = set(info["done"]) | set(info["skipped"])
-        todo += [(c["ts"], page, c) for c in caps if c["ts"] not in done]
+        fresh = [(c["ts"], page, c) for c in caps if c["ts"] not in done]
+        todo += fresh
+        log(f"[etf_vintages] CDX {page}：{len(caps)} 筆存檔，待處理 {len(fresh)}")
         info["last_cdx"] = _iso(now)
         if not since:
             info["captures_listed"] = len(caps)
