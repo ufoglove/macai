@@ -490,7 +490,8 @@ def process_wayback(store: Store, progress: dict, wb: Wayback, *, pages: dict | 
                 progress["digests"][digest] = ts
         if (stats["fetched"] + stats["from_raw"]) % 10 == 0:
             on_checkpoint()
-            log(f"[etf_vintages] wayback 已處理 {stats['fetched']} 筆存檔，新增 {stats['events']} 筆紀錄")
+            log(f"[etf_vintages] wayback 已處理 {stats['fetched'] + stats['from_raw']} 筆存檔（本機原始檔 {stats['from_raw']}），"
+                f"新增 {stats['events']} 筆紀錄")
     stats["remaining"] = sum(1 for ts, page, _ in todo
                              if ts not in progress["pages"][page]["skipped"] and ts not in set(progress["pages"][page]["done"]))
     if errors:

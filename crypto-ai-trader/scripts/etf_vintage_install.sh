@@ -14,16 +14,16 @@ tpl="launchd/$L.plist"; out="$HOME/Library/LaunchAgents/$L.plist"
 mkdir -p "$HOME/Library/Logs/crypto-ai" "$HOME/Library/LaunchAgents"
 case "${1:-}" in
   --status)
-    d=$(launchd_where "$L") && echo "  ✓ $S 已載入（$d）" || echo "  ✗ $S 未載入"; exit 0 ;;
+    d=$(launchd_where "$L") && echo "  ✓ ${S} 已載入（${d}）" || echo "  ✗ ${S} 未載入"; exit 0 ;;
   --uninstall)
     launchctl bootout "$LAUNCHD_DOMAIN/$L" 2>/dev/null
     rm -f "$out"
     [ -f "$tpl" ] && mv "$tpl" "$tpl.removed"
-    echo "  · $S 已卸下"; exit 0 ;;
+    echo "  · ${S} 已卸下"; exit 0 ;;
 esac
-[ -f "$tpl" ] || { echo "  ✗ 缺模板 $tpl" >&2; exit 1; }
+[ -f "$tpl" ] || { echo "  ✗ 缺模板 ${tpl}" >&2; exit 1; }
 sed "s#__ROOT__#$ROOT#g; s#__HOME__#$HOME#g; s#__VENV__#$VENV_R#g" "$tpl" > "$out.tmp" && plutil -lint "$out.tmp" >/dev/null \
-  || { echo "  ✗ $S 模板渲染失敗" >&2; rm -f "$out.tmp"; exit 1; }
+  || { echo "  ✗ ${S} 模板渲染失敗" >&2; rm -f "$out.tmp"; exit 1; }
 chmod 600 "$out.tmp"; mv "$out.tmp" "$out"
 launchctl bootout "$LAUNCHD_DOMAIN/$L" 2>/dev/null
-if launchctl bootstrap "$LAUNCHD_DOMAIN" "$out"; then echo "  ✓ $S 已載入（$LAUNCHD_DOMAIN）"; else echo "  ✗ $S 載入失敗" >&2; exit 1; fi
+if launchctl bootstrap "$LAUNCHD_DOMAIN" "$out"; then echo "  ✓ ${S} 已載入（${LAUNCHD_DOMAIN}）"; else echo "  ✗ ${S} 載入失敗" >&2; exit 1; fi
