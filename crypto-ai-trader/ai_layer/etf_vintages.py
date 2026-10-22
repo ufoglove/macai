@@ -188,14 +188,13 @@ def parse_farside(html: str, ref=None) -> list[dict]:
     out = []
     for table in soup.find_all("table"):
         rows = [[c.get_text(" ", strip=True) for c in tr.find_all(["td", "th"])] for tr in table.find_all("tr")]
+        # 代號列：至少兩格像代號、且認得出資產（2025-11 的 SOL 頁只有 BSOL、GSOL 兩檔）
         header_i = next((i for i, cells in enumerate(rows)
-                         if sum(bool(TICKER_RE.match(c)) for c in cells[1:]) >= 3), None)
+                         if sum(bool(TICKER_RE.match(c)) for c in cells[1:]) >= 2 and detect_asset(cells[1:])), None)
         if header_i is None:
             continue
         header = rows[header_i]
         asset = detect_asset(header)
-        if asset is None:
-            continue
         total_col = None
         for cells in rows[max(0, header_i - 1): header_i + 1]:
             for j, c in enumerate(cells):

@@ -282,3 +282,11 @@ def test_decode_salvages_truncated_gzip():
     assert ev._decode(packed) == html
     salvaged = ev._decode(packed[:-12])          # 少了 gzip 尾端（CRC／長度）
     assert salvaged.startswith(html[:1000]) and ev.parse_farside(salvaged)
+
+
+def test_parse_two_fund_sol_page():
+    html = """<table><tr><td></td><td></td><td></td><td>Total</td></tr><tr><td></td><td>BSOL</td><td>GSOL</td><td></td></tr>
+    <tr><td>Staking</td><td>Yes</td><td>Yes</td><td></td></tr>
+    <tr><td>13 Nov 2025</td><td>1.5</td><td>0.0</td><td>1.5</td></tr></table>"""
+    [table] = ev.parse_farside(html)
+    assert table["asset"] == "SOL" and table["rows"][0]["total_usd"] == 1.5e6
