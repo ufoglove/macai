@@ -16,7 +16,7 @@ ETF 淨流歷史庫（`state/macro_*.parquet`）只存 CoinGlass 的最新修訂
 
 | source | 內容 | known_at（研究用） | 起點 |
 |---|---|---|---|
-| `farside` | Wayback 存的 Farside 表（BTC、ETH、SOL；每檔基金＋總額，百萬美元換成美元） | 存檔時刻（`known_at_basis: wayback_capture`） | BTC 2024-01-30、ETH 2024-05 起有存檔 |
+| `farside` | Wayback 存的 Farside 表（BTC、ETH、SOL；每檔基金＋總額，百萬美元換成美元） | 存檔時刻（`known_at_basis: wayback_capture`） | 觀測日 BTC 2024-01-11、ETH 2024-07-23、SOL 2025-10-28（最早存檔 BTC 2024-01-30，已含上市以來的表） |
 | `coinglass` | 本機每小時呼叫 CoinGlass 中轉 `/api/etf/{bitcoin,ethereum}/flow-history`（逐檔＋總額） | 本機抓取時刻（`local_fetch`） | 2026-10-22 |
 | `coinglass`（page `macro_daily`） | 併入 `state/macro_vintages.jsonl` 的 BTC 總額（10/09 起每日 01:40 UTC） | 該紀錄的 `observed_at` | 2026-10-09 |
 
@@ -25,6 +25,20 @@ ETF 淨流歷史庫（`state/macro_*.parquet`）只存 CoinGlass 的最新修訂
 - Farside 直連有 Cloudflare 驗證頁，本模組不繞過，只讀 Internet Archive 已公開的存檔（每次請求間隔 2 秒，429／5xx 退避）。
 - 金十快訊搜尋只回最近約 3 天、且多是 A 股 ETF，不能回補，沒有接。
 - CoinGlass 中轉金鑰 2026-11-10 到期；到期後 `coinglass` 停止新增，`farside` 不受影響（`last_run.json` 會記錯誤）。
+
+## 目前覆蓋（2026-10-22 全量回補後）
+
+逐月表見 `reports/etf_vintage_coverage_20261022.md`；之後用 `report` 指令重產。
+
+- Wayback 8 個 Farside 頁共 1,462 份存檔：1,408 份解析成功，54 份沒有 ETF 表（上市前的頁、首頁、2026 年部分只有空殼的存檔），0 份失敗。
+  共 3,099 筆紀錄。
+- 有完整值的觀測日：BTC 696 天、ETH 564 天、SOL 81 天（SOL 2026-04 之後的存檔都沒有表，目前只到 2026-03-25）。
+- 「觀測日＋3 天內可證明已完整公開」的比例（macro.yaml 目前假設 D+3）：2024–25 窗內 BTC 53%（延遲中位數 45 小時）、
+  ETH 33%（101 小時）。存檔密的月份延遲短：2024-04～09 BTC 延遲中位數 12～17 小時、D+3 內 77%～100%；
+  2026-07 起 9～44 小時、52%～87%。2026-03～05 幾乎沒有存檔，延遲中位數 50～100 天，這幾個月實際上不能用。
+- 和 CoinGlass 最終值對帳：BTC 696 天中 618 天差距在 15 萬美元內，ETH 564 天中 553 天。其餘是兩家數字本來就不同
+  （例如 BTC 2025-02-25 Farside −1,113.7 vs CoinGlass −937.9 百萬美元），不是解析錯。CoinGlass 有、Farside 沒有的日子
+  都是美股休市日（CoinGlass 記 0）。
 
 ## 紀錄格式（`state/etf_vintages/observations.jsonl`，只追加、進版控當證據）
 
