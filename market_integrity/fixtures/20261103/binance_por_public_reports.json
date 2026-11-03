@@ -1,0 +1,11 @@
+{"_capture": {"channel": "WebSearch/WebFetch of public pages", "fetched_at": "2026-11-03T01:40:00Z"},
+"primary_page": {"url": "https://www.binance.com/en/proof-of-reserves", "result": "page fetched but figures are JavaScript-rendered; Audit Time / Merkle Root fields empty", "direct_http_from_cloud": "proxy CONNECT 403"},
+"reports": [
+ {"source": "crypto.news", "url": "https://crypto.news/binance-usdt-holdings-fall-proof-of-reserves-october-2026/", "published_at": "2026-11-02T11:20:25Z",
+  "snapshot_date": "2026-10-31", "snapshot_tz_stated": false, "assets_covered": ["BTC","ETH","USDT","BNB","SOL","USDC","XRP","USD1","RLUSD","ZEC"],
+  "figures": {"BTC": {"holdings": "692187", "reserve_ratio_pct": "100.04"}, "ETH": {"holdings": "3654919", "reserve_ratio_pct": null}, "USDT": {"holdings": "29483062742", "reserve_ratio_pct": "100.00"}, "BNB": {"holdings": "42638276", "reserve_ratio_pct": "101.30"}},
+  "context": "Security incident 2026-10-29 (~USD 6.3B); withdrawals suspended, partially resumed 2026-11-01. Full ZK proof expected by 2026-11-03 (40-50h generation)."},
+ {"source": "coin-turk", "url": "https://en.coin-turk.com/binance-confirms-reserves-fully-backed-after-6-3-billion-hack-plans-new-snapshot/", "published_at": "2026-11-02T22:26:27Z",
+  "snapshot_date": null, "figures": {"BTC": {"reserve_ratio_pct": "100.04"}, "ETH": {"reserve_ratio_pct": "100"}, "USDT": {"reserve_ratio_pct": "100"}},
+  "context": "Next reserves snapshot planned 2026-11-04 (no time given)."}
+]}
