@@ -1,0 +1,3 @@
+{"_capture": {"channel": "Crypto.com Exchange MCP get_ticker", "note": "values verbatim"},
+"BTCUSD-PERP":{"best_ask":"77178.9","best_bid":"77178.8","high":"78780.1","instrument_name":"BTCUSD-PERP","last":"77172.1","low":"76544.4","open_interest":"6232.3414","timestamp":"2026-11-03T01:34:06.184Z","volume":"4569.7697","volume_value":"353667677.43"},
+"ETHUSD-PERP":{"best_ask":"2257.89","best_bid":"2257.88","high":"2315.98","instrument_name":"ETHUSD-PERP","last":"2257.94","low":"2233.80","open_interest":"177285.7364","timestamp":"2026-11-03T01:35:15.788Z","volume":"69087.7607","volume_value":"156820639.65"}}
