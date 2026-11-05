@@ -154,6 +154,13 @@ def fetch_klines(symbol: str, market: MarketType, interval: str, start: datetime
     return out
 
 
+# Publication lag measured on 2026-11-03 (15 s poll): an openInterestHist snapshot shows up
+# 40 s to 3 min after its timestamp, a funding settlement within ~25 s. available_at uses
+# these bounds so a backtest never sees a value before a live system could have.
+OI_PUBLISH_LAG = timedelta(minutes=5)
+FUNDING_PUBLISH_LAG = timedelta(minutes=1)
+
+
 def fetch_open_interest_hist(symbol: str, start: datetime, end: datetime, now: datetime,
                              period: str = "1h", transport: Transport = urllib_transport) -> list:
     """USD-M open interest snapshots (contracts). Binance keeps ~30 days of history."""
@@ -181,6 +188,10 @@ def fetch_open_interest_hist(symbol: str, start: datetime, end: datetime, now: d
                               available_at=None, note=failure.detail))
             continue
         r = by_ts.get(t)
+        if r is None and now < t + OI_PUBLISH_LAG:
+            out.append(Record(**base, availability=Availability.NOT_YET_PUBLISHED, event_time=t,
+                              available_at=None, note="inside publication lag"))
+            continue
         if r is None:
             status = Availability.EMPTY_RESPONSE if not rows else Availability.MISSING_IN_SERIES
             out.append(Record(**base, availability=status, event_time=t, available_at=None,
@@ -190,11 +201,11 @@ def fetch_open_interest_hist(symbol: str, start: datetime, end: datetime, now: d
         if val is None or val <= 0:
             # Open interest of a live BTC/ETH perpetual cannot be zero; treat as a feed fault.
             out.append(Record(**base, availability=Availability.SUSPECT_VALUE, event_time=t,
-                              available_at=t, value=val, raw=str(r.get("sumOpenInterest")),
+                              available_at=t + OI_PUBLISH_LAG, value=val, raw=str(r.get("sumOpenInterest")),
                               flags=["zero_or_missing_open_interest"]))
         else:
-            out.append(Record(**base, availability=Availability.OK, event_time=t, available_at=t,
-                              value=val, raw=str(r["sumOpenInterest"])))
+            out.append(Record(**base, availability=Availability.OK, event_time=t,
+                              available_at=t + OI_PUBLISH_LAG, value=val, raw=str(r["sumOpenInterest"])))
     return out
 
 
@@ -240,11 +251,16 @@ def fetch_funding(symbol: str, start: datetime, end: datetime, now: datetime,
                               available_at=None, note=failure.detail))
             continue
         r = by_slot.get(t)
+        if r is None and now < t + FUNDING_PUBLISH_LAG:
+            out.append(Record(**base, availability=Availability.NOT_YET_PUBLISHED, event_time=t,
+                              available_at=None, note="inside publication lag"))
+            continue
         if r is None:
             status = Availability.EMPTY_RESPONSE if not rows else Availability.MISSING_IN_SERIES
             out.append(Record(**base, availability=status, event_time=t, available_at=None,
                               note="settlement absent from exchange response"))
             continue
+        known = max(_from_ms(r["fundingTime"]), t + FUNDING_PUBLISH_LAG)
         raw = r.get("fundingRate")
         val = _dec(raw)
         if val is None or raw in ("", None):
@@ -252,12 +268,12 @@ def fetch_funding(symbol: str, start: datetime, end: datetime, now: datetime,
                               available_at=None, raw=str(raw)))
         elif val == 0:
             out.append(Record(**base, availability=Availability.SUSPECT_VALUE, event_time=t,
-                              available_at=_from_ms(r["fundingTime"]), value=val, raw=str(raw),
+                              available_at=known, value=val, raw=str(raw),
                               flags=["literal_zero_funding"],
                               note="exact 0 is possible but rare; needs cross-check before use"))
         else:
             out.append(Record(**base, availability=Availability.OK, event_time=t,
-                              available_at=_from_ms(r["fundingTime"]), value=val, raw=str(raw)))
+                              available_at=known, value=val, raw=str(raw)))
     return out
 
 

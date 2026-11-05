@@ -70,8 +70,20 @@ def expected_gate(as_of: datetime) -> str:
     return "TRADEABLE"
 
 
+def _fixture_expected(as_of: datetime, symbol: str) -> str:
+    exp = expected_gate(as_of)
+    # zero_oi only hits BTC
+    if exp == "HALT" and symbol == "ETHUSDT" and _only_fault(as_of) == "zero_oi":
+        exp = "TRADEABLE"
+    return exp
+
+
 def audit(rows) -> dict:
-    """Checks that hold for every step of the replay."""
+    return audit_rows(rows, _fixture_expected)
+
+
+def audit_rows(rows, expected) -> dict:
+    """Checks that hold for every step of the replay; ``expected(as_of, symbol)`` gives the right gate."""
     problems = []
     misreads = collections.Counter()
     for row in rows:
@@ -86,10 +98,7 @@ def audit(rows) -> dict:
                 problems.append(f"{row['as_of']} {row['symbol']} {name} non-OK feature has value")
             if f["status"] != "OK" and Decimal(row["naive"][name]) == 0:
                 misreads[f"{name}:{f['status']}"] += 1
-        exp = expected_gate(utc(row["as_of"]))
-        # zero_oi only hits BTC
-        if exp == "HALT" and row["symbol"] == "ETHUSDT" and _only_fault(utc(row["as_of"])) == "zero_oi":
-            exp = "TRADEABLE"
+        exp = expected(utc(row["as_of"]), row["symbol"])
         if row["gate"] != exp:
             problems.append(f"{row['as_of']} {row['symbol']} gate={row['gate']} expected={exp}")
     halts = sum(r["gate"] == "HALT" for r in rows)

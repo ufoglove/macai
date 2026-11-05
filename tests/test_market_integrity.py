@@ -170,3 +170,76 @@ class FallbackTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PublicationLagTests(unittest.TestCase):
+    """Binance serves an OI snapshot 40 s to 3 min after its timestamp (measured 2026-11-03)."""
+
+    def test_oi_inside_lag_is_not_yet_published_and_previous_snapshot_is_used(self):
+        rows = [{"timestamp": bp._ms(T0 + timedelta(hours=h)), "sumOpenInterest": "95000"} for h in range(5)]
+        now = T0 + timedelta(hours=5, seconds=20)       # 05:00 snapshot not out yet
+        recs = bp.fetch_open_interest_hist("BTCUSDT", T0, T0 + timedelta(hours=5), now,
+                                           transport=fixed(200, json.dumps(rows)))
+        last = recs[-1]
+        self.assertEqual(last.availability, Availability.NOT_YET_PUBLISHED)
+        self.assertIsNone(last.value)
+        f = build_features(recs, "BTCUSDT", now)["usdm_perpetual.open_interest"]
+        self.assertEqual(f.status, "OK")
+        self.assertEqual(f.as_of_event, "2026-11-02T04:00:00.000Z")
+
+    def test_oi_available_at_includes_publication_lag(self):
+        rows = [{"timestamp": bp._ms(T0 + timedelta(hours=h)), "sumOpenInterest": "95000"} for h in range(2)]
+        now = T0 + timedelta(hours=1, minutes=1)        # served early, but a live system could not count on it
+        recs = bp.fetch_open_interest_hist("BTCUSDT", T0, T0 + timedelta(hours=1), now,
+                                           transport=fixed(200, json.dumps(rows)))
+        self.assertEqual(recs[-1].available_at, T0 + timedelta(hours=1) + bp.OI_PUBLISH_LAG)
+        f = build_features(recs, "BTCUSDT", now)["usdm_perpetual.open_interest"]
+        self.assertEqual(f.as_of_event, "2026-11-02T00:00:00.000Z")
+
+    def test_oi_absent_after_lag_is_missing(self):
+        rows = [{"timestamp": bp._ms(T0 + timedelta(hours=h)), "sumOpenInterest": "95000"} for h in range(5)]
+        now = T0 + timedelta(hours=5) + bp.OI_PUBLISH_LAG
+        recs = bp.fetch_open_interest_hist("BTCUSDT", T0, T0 + timedelta(hours=5), now,
+                                           transport=fixed(200, json.dumps(rows)))
+        self.assertEqual(recs[-1].availability, Availability.MISSING_IN_SERIES)
+        self.assertEqual(gate(build_features(recs, "BTCUSDT", now)), "HALT")
+
+    def test_funding_inside_lag_is_not_yet_published(self):
+        rows = [{"fundingTime": bp._ms(T0) + 2, "fundingRate": "0.0001"}]
+        now = T0 + timedelta(hours=8, seconds=10)
+        recs = bp.fetch_funding("BTCUSDT", T0, T0 + timedelta(hours=8), now, fixed(200, json.dumps(rows)))
+        self.assertEqual(recs[-1].availability, Availability.NOT_YET_PUBLISHED)
+        recs = bp.fetch_funding("BTCUSDT", T0, T0 + timedelta(hours=8), now + timedelta(minutes=5),
+                                fixed(200, json.dumps(rows)))
+        self.assertEqual(recs[-1].availability, Availability.MISSING_IN_SERIES)
+
+
+class LiveCaptureReplayTests(unittest.TestCase):
+    """Replay on the real Binance capture taken from the Mac mini after the window closed."""
+
+    @classmethod
+    def setUpClass(cls):
+        from market_integrity import replay_live as rl
+        from market_integrity.schema import read_jsonl
+        recs = read_jsonl(FIX / "binance_live_capture.jsonl")
+        cls.end = min(max(r.fetched_at for r in recs), WINDOW_END)
+        cls.rows = run_replay(rl.server_from_capture(recs), WINDOW_START, WINDOW_END, list(rl.steps(cls.end)))
+        cls.result = rl.audit_rows(cls.rows, rl.expected_gate)
+
+    def test_no_invariant_violations(self):
+        self.assertEqual(self.result["problems"], [])
+
+    def test_steps_inside_publication_lag_stay_tradeable(self):
+        quiet = [r for r in self.rows if r["as_of"].endswith(":00:20.000Z") and r["as_of"] < "2026-11-02T14:00"]
+        self.assertTrue(quiet)
+        self.assertTrue(all(r["gate"] == "TRADEABLE" for r in quiet))
+
+    def test_frozen_oi_feed_halts(self):
+        row = next(r for r in self.rows if r["as_of"].startswith("2026-11-03T07:05") and r["symbol"] == "ETHUSDT")
+        self.assertEqual(row["gate"], "HALT")
+        self.assertEqual(row["features"]["usdm_perpetual.open_interest"]["status"], "MISSING_IN_SERIES")
+
+    def test_late_funding_halts_even_though_previous_rate_is_fresh_enough(self):
+        row = next(r for r in self.rows if r["as_of"].startswith("2026-11-03T16:05") and r["symbol"] == "BTCUSDT")
+        self.assertEqual(row["gate"], "HALT")
+        self.assertEqual(row["features"]["usdm_perpetual.funding_rate"]["status"], "MISSING_IN_SERIES")

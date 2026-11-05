@@ -45,7 +45,7 @@ def build_features(records, symbol: str, as_of: datetime) -> dict:
     feats = {}
     for market, metric, max_age in REQUIRED:
         rs = [r for r in records if r.symbol == symbol and r.market_type == market and r.metric == metric
-              and r.event_time is not None and r.event_time <= as_of]
+              and r.event_time is not None and r.event_time <= as_of and _knowable(r, as_of)]
         rs.sort(key=lambda r: r.event_time)
         name = f"{market.value}.{metric}"
         if not rs:
@@ -65,6 +65,17 @@ def build_features(records, symbol: str, as_of: datetime) -> dict:
                       else latest.availability.value)
             feats[name] = Feature(name, None, status, iso(latest.event_time), age)
     return feats
+
+
+def _knowable(r: Record, as_of: datetime) -> bool:
+    """Drop observations that were not out yet at as_of (inside the publication lag).
+
+    They are neither a fault nor a value: the previous observation stays current,
+    subject to the staleness limit. Failures still count, so an outage still halts.
+    """
+    if r.availability == Availability.NOT_YET_PUBLISHED:
+        return False
+    return not (r.usable and r.available_at is not None and r.available_at > as_of)
 
 
 def gate(feats: dict) -> str:

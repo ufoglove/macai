@@ -12,9 +12,20 @@ python3 -m market_integrity.run_sample --out out/20261103
 # 只跑備援樣本 + 重播（不連網）
 python3 -m market_integrity.run_sample --skip-live --out out/20261103
 
+# 用真實 Binance 擷取重播（含公布延遲、凍結 OI、Funding 晚到）
+python3 -m market_integrity.replay_live --sample out/20261103/sample_records.jsonl --out out/20261103
+# 不連網重現 11/03 21:33 UTC 的 Mac mini 擷取
+python3 -m market_integrity.replay_live --sample market_integrity/fixtures/20261103/binance_live_capture.jsonl --out out/replay_live
+
 # 測試
 python3 -m unittest discover -s tests -v
 ```
+
+### 公布延遲（2026-11-03 實測）
+
+Binance `openInterestHist` 的整點快照在整點後 40 秒到 3 分鐘才出現，資金費結算約 25 秒內出現。
+所以 OI 的 `available_at` = 快照時間 + 5 分鐘、Funding = 結算時間 + 1 分鐘；
+在延遲內查不到的點記為 `NOT_YET_PUBLISHED`（沿用上一筆，仍受過期上限約束），超過延遲仍查不到才是 `MISSING_IN_SERIES`。
 
 只依賴 Python 標準函式庫（3.9+）。
 
