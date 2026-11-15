@@ -1,0 +1,7 @@
+{"_capture": {"channel": "CoinMarketCap MCP get_global_crypto_derivatives_metrics", "fetched_at": "2026-11-03T01:34:10Z", "note": "payload carries no as-of timestamp; subset of fields, values verbatim"},
+"totalOpenInterest":{"current":"366.23 B","percentage_change_24h":"+26.56%"},
+"totalVolume":{"total_usd_24h":"162.51 T"},
+"futures":{"volume":{"total_usd_24h":"96.65 B"},"openInterest":{"current":"1.13 B"}},
+"perpetuals":{"volume":{"total_usd_24h":"162.41 T"},"openInterest":{"current":"365.09 B"}},
+"fundingRate":{"current":"0.0092882","percentage_change_24h":"+65.93%"},
+"btc_liquidations":{"total_usd_1h":{"total":"0","long":"0","short":"0"},"total_usd_4h":{"total":"0","long":"0","short":"0"},"total_usd_12h":{"total":"61.64 M","long":"59.3 M","short":"2.34 M"},"total_usd_24h":{"total":"82.88 M","long":"66.28 M","short":"16.6 M"},"pct_change_prev_4h_vs_prior_4h":{"total":"-100%"}}}
